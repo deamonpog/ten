@@ -1,2 +1,2 @@
-# ten
+# TEN
 Transfer Entropy Network Analysis
