@@ -32,18 +32,27 @@ import pyinform
 import multiprocessing
 import typing
 
-FREQUENCY = 'D'
+# FREQUENCY = 'D'
+#
+# dummy_data_dir = 'C:\\STUFF\\RESEARCH\\TENet\\DummyData\\'
+#
+# file_table_1 = 'dummy_news_domain.csv'
+# file_table_2 = 'dummy_user_data.csv'
+# file_table_3 = 'dummy_social_media_data.csv'
+#
+# file_table_6 = 'dummy_actor.csv'
+# file_table_7 = 'dummy_indv_actor.csv'
+# file_table_8 = 'dummy_comm_actor.csv'
+# file_table_9 = 'dummy_plat_actor.csv'
 
-dummy_data_dir = 'C:\\STUFF\\RESEARCH\\TENet\\DummyData\\'
+data_dir = 'C:\\STUFF\\RESEARCH\\Brandwatch\\DATA\\MainQuery\\All\\'
+file_table_1 = ''
+file_table_2 = 'users.csv'
 
-file_table_1 = 'dummy_news_domain.csv'
-file_table_2 = 'dummy_user_data.csv'
-file_table_3 = 'dummy_social_media_data.csv'
-
-file_table_6 = 'dummy_actor.csv'
-file_table_7 = 'dummy_indv_actor.csv'
-file_table_8 = 'dummy_comm_actor.csv'
-file_table_9 = 'dummy_plat_actor.csv'
+file_table_6 = 'actors.csv'
+file_table_7 = 'indv_actors.csv'
+file_table_8 = 'comm_actors.csv'
+file_table_9 = 'plat_actors.csv'
 
 
 def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df):
@@ -143,7 +152,7 @@ def multiprocess_resample_actor_binary_timeseries(ordered_actor_id_events_list, 
     """
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
         results = p.starmap(resample_binary_timeseries,
-                            [(actor_id_events.set_index('time'), time_index, frequency) for actor_id_events in
+                            [(actor_id_events.set_index('datetime'), time_index, frequency) for actor_id_events in
                              ordered_actor_id_events_list])
     return results
 
@@ -214,8 +223,8 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
     :rtype:
     """
     # generate time_index
-    start_date = all_events_df['time'].dt.date.min()
-    end_date = all_events_df['time'].dt.date.max() + datetime.timedelta(days=1)
+    start_date = all_events_df['datetime'].dt.date.min()
+    end_date = all_events_df['datetime'].dt.date.max() + datetime.timedelta(days=1)
     print(f"Data available from {start_date} to {end_date}")
     datetime_index = generate_timeseries_index(start_date, end_date, frequency)
     # resample actor timeseries
@@ -232,7 +241,7 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
 def main():
     # newsdomains = pd.read_csv(dummy_data_dir + file_table_1, index_col='domain_name')
     # users = pd.read_csv(dummy_data_dir + file_table_2)
-    t3_all_osn_msgs = pd.read_csv(dummy_data_dir + file_table_3, parse_dates=['time'])
+    t3_all_osn_msgs = pd.read_csv(dummy_data_dir + file_table_3, parse_dates=['datetime'])
 
     t6_actors = pd.read_csv(dummy_data_dir + file_table_6, index_col='actor_id')
     t7_indv_actors = pd.read_csv(dummy_data_dir + file_table_7, index_col='actor_id')
