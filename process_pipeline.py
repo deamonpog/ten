@@ -45,14 +45,14 @@ import typing
 # file_table_8 = 'dummy_comm_actor.csv'
 # file_table_9 = 'dummy_plat_actor.csv'
 
-data_dir = 'C:\\STUFF\\RESEARCH\\Brandwatch\\DATA\\MainQuery\\All\\'
-file_table_1 = ''
-file_table_2 = 'users.csv'
+# data_dir = 'C:\\STUFF\\RESEARCH\\Brandwatch\\DATA\\MainQuery\\All\\'
+# file_table_1 = ''
+# file_table_2 = 'users.csv'
 
-file_table_6 = 'actors.csv'
-file_table_7 = 'indv_actors.csv'
-file_table_8 = 'comm_actors.csv'
-file_table_9 = 'plat_actors.csv'
+# file_table_6 = 'actors.csv'
+# file_table_7 = 'indv_actors.csv'
+# file_table_8 = 'comm_actors.csv'
+# file_table_9 = 'plat_actors.csv'
 
 
 def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df):
@@ -76,23 +76,30 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
     actor_type = actors_df.loc[actor_id][0]
     if actor_type == 'plat':
         plat = plat_actors_df.loc[actor_id][0]
-        print(f"{actor_id} is Platform: {plat}")
+        #print(f"{actor_id} is Platform: {plat}")
         return dataset_df[dataset_df['platform'] == plat]
     elif actor_type == 'indv':
         user_id = indv_actors_df.loc[actor_id][0]
-        print(f"{actor_id} is Individual: {user_id}")
+        #print(f"{actor_id} is Individual: {user_id}")
         return dataset_df[dataset_df['user_id'] == user_id]
     elif actor_type == 'comm':
-        user_list = comm_actors_df.loc[actor_id]['user_id'].values
-        msg = f"{actor_id} is a Community of (size = {len(user_list)}) "
-        print_limit = 10
-        if len(user_list) <= print_limit:
-            msg = f"{msg} : {user_list}"
+        user_list = comm_actors_df.loc[actor_id]['user_id']
+        # if community has only one user dont run the code for it 
+        # (detected by making sure we get a series for the user_list)
+        # in such case we return a datframe with 0 records
+        if type(user_list) is pd.Series:
+            user_list = user_list.values
+            msg = f"{actor_id} is a Community of (size = {len(user_list)}) "
+            print_limit = 10
+            if len(user_list) <= print_limit:
+                msg = f"{msg} : {user_list}"
+            else:
+                users = ' '.join([f"{u}" for u in np.random.choice(user_list, print_limit, replace=False)])
+                msg = f"{msg} : [{users} ...]"
+            print(msg)
+            return dataset_df[dataset_df['user_id'].isin(user_list)]
         else:
-            users = ' '.join([f"{u}" for u in np.random.choice(user_list, print_limit, replace=False)])
-            msg = f"{msg} : [{users} ...]"
-        print(msg)
-        return dataset_df[dataset_df['user_id'].isin(user_list)]
+            return dataset_df[0:0] # return 0 records
     else:
         raise Exception('Unknown actor type')
 
@@ -227,41 +234,43 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
     end_date = all_events_df['datetime'].dt.date.max() + datetime.timedelta(days=1)
     print(f"Data available from {start_date} to {end_date}")
     datetime_index = generate_timeseries_index(start_date, end_date, frequency)
+    print("Running resampling timeseries calc...")
     # resample actor timeseries
     actor_timeseries_list = multiprocess_resample_actor_binary_timeseries(
         [get_events_of_actor(actor_id, all_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df) for
          actor_id in actor_id_list],
         datetime_index, frequency)
+    print("Running TE edge list calc...")
     # calculate te values
     src_tgt_te_list = multiprocess_run_calculate_te_edge_list(actor_id_list, actor_timeseries_list)
     result_df = pd.DataFrame(src_tgt_te_list, columns=['Source', 'Target', 'TE'])
     return result_df
 
 
-def main():
-    # newsdomains = pd.read_csv(dummy_data_dir + file_table_1, index_col='domain_name')
-    # users = pd.read_csv(dummy_data_dir + file_table_2)
-    t3_all_osn_msgs = pd.read_csv(dummy_data_dir + file_table_3, parse_dates=['datetime'])
+# def main():
+#     # newsdomains = pd.read_csv(dummy_data_dir + file_table_1, index_col='domain_name')
+#     # users = pd.read_csv(dummy_data_dir + file_table_2)
+#     t3_all_osn_msgs = pd.read_csv(dummy_data_dir + file_table_3, parse_dates=['datetime'])
 
-    t6_actors = pd.read_csv(dummy_data_dir + file_table_6, index_col='actor_id')
-    t7_indv_actors = pd.read_csv(dummy_data_dir + file_table_7, index_col='actor_id')
-    t8_comm_actors = pd.read_csv(dummy_data_dir + file_table_8, index_col='actor_id')
-    t9_plat_actors = pd.read_csv(dummy_data_dir + file_table_9, index_col='actor_id')
+#     t6_actors = pd.read_csv(dummy_data_dir + file_table_6, index_col='actor_id')
+#     t7_indv_actors = pd.read_csv(dummy_data_dir + file_table_7, index_col='actor_id')
+#     t8_comm_actors = pd.read_csv(dummy_data_dir + file_table_8, index_col='actor_id')
+#     t9_plat_actors = pd.read_csv(dummy_data_dir + file_table_9, index_col='actor_id')
 
-    # choose actors (e.g. here collects all the actors)
-    selected_indv_actors = t7_indv_actors.index.to_list()
-    selected_comm_actors = t8_comm_actors.index.to_list()
-    selected_plat_actors = t9_plat_actors.index.to_list()
-    actors_of_interest = selected_indv_actors + selected_comm_actors + selected_plat_actors
+#     # choose actors (e.g. here collects all the actors)
+#     selected_indv_actors = t7_indv_actors.index.to_list()
+#     selected_comm_actors = t8_comm_actors.index.to_list()
+#     selected_plat_actors = t9_plat_actors.index.to_list()
+#     actors_of_interest = selected_indv_actors + selected_comm_actors + selected_plat_actors
 
-    # generate te network for the selected actors
-    results_df = generate_te_edge_list(actors_of_interest, t3_all_osn_msgs, t6_actors, t7_indv_actors, t8_comm_actors,
-                                       t9_plat_actors, '2H')
-    results_df['Weight'] = results_df['TE']
-    results_df.to_csv(dummy_data_dir + 'dummy_actor_te_edges.csv', index=False)
+#     # generate te network for the selected actors
+#     results_df = generate_te_edge_list(actors_of_interest, t3_all_osn_msgs, t6_actors, t7_indv_actors, t8_comm_actors,
+#                                        t9_plat_actors, '2H')
+#     results_df['Weight'] = results_df['TE']
+#     results_df.to_csv(dummy_data_dir + 'dummy_actor_te_edges.csv', index=False)
 
 
-if __name__ == '__main__':
-    print('--Begin--')
-    main()
-    print('--End--')
+# if __name__ == '__main__':
+#     print('--Begin--')
+#     main()
+#     print('--End--')
