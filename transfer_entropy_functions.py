@@ -73,7 +73,7 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
     :return: a pandas dataframe that has same columns as Table 3 but filtered with only the events of the given actor_id
     :rtype: pd.DataFrame
     """
-    actor_type = actors_df.loc[actor_id][0]
+    actor_type = actors_df.loc[actor_id]['actor_type']
     if actor_type == 'plat':
         plat = plat_actors_df.loc[actor_id][0]
         #print(f"{actor_id} is Platform: {plat}")
@@ -101,7 +101,7 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
         else:
             return dataset_df[0:0] # return 0 records
     else:
-        raise Exception('Unknown actor type')
+        raise Exception(f'Unknown actor type : {actor_id} -> {actor_type}\n{actors_df}')
 
 
 def generate_timeseries_index(start_time, end_time, frequency):
@@ -135,7 +135,7 @@ def resample_binary_timeseries(timeseries, time_index, frequency):
     :rtype: np.ndarray
     """
     return timeseries.resample(frequency).apply(lambda x: 1 if len(x) > 0 else 0).iloc[:, 0].rename('events').reindex(
-        time_index.tz_localize('UTC'), fill_value=0).values
+        time_index, fill_value=0).values
 
 
 def multiprocess_resample_actor_binary_timeseries(ordered_actor_id_events_list, time_index, frequency):
@@ -179,7 +179,7 @@ def calculate_te_values(src_actor_id, tgt_actor_id, src_timeseries, tgt_timeseri
     :return: the list [Source actor_id, Target actor_id, Transfer Entropy value]
     :rtype: typing.List[str, str, float]
     """
-    print(f"{src_actor_id} ==> {tgt_actor_id}")
+    print(f"[{src_actor_id} ==> {tgt_actor_id}]")
     # print(f"{src_timeseries.shape} ==> {tgt_timeseries.shape}")
     return [src_actor_id, tgt_actor_id, pyinform.transfer_entropy(src_timeseries, tgt_timeseries, 2)]
 
@@ -203,8 +203,14 @@ def multiprocess_run_calculate_te_edge_list(ordered_actor_id_list, ordered_actor
                 continue
             param_list.append((ordered_actor_id_list[src_idx], ordered_actor_id_list[tgt_idx],
                                ordered_actor_timeseries_list[src_idx], ordered_actor_timeseries_list[tgt_idx]))
-    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-        results = p.starmap(calculate_te_values, param_list)
+    print(f"params ready. Count: {len(param_list)}")
+    #with multiprocessing.Pool(multiprocessing.cpu_count() - 1) as p:
+    #    results = p.starmap(calculate_te_values, param_list)
+    results = []
+    for param in param_list:
+        r = calculate_te_values(param[0],param[1],param[2],param[3])
+        results.append(r)
+    print("mult proc done")
     return results
 
 
@@ -241,8 +247,10 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
          actor_id in actor_id_list],
         datetime_index, frequency)
     print("Running TE edge list calc...")
+    print(actor_timeseries_list)
     # calculate te values
     src_tgt_te_list = multiprocess_run_calculate_te_edge_list(actor_id_list, actor_timeseries_list)
+    print("Calculation done. Creating dataframe...")
     result_df = pd.DataFrame(src_tgt_te_list, columns=['Source', 'Target', 'TE'])
     return result_df
 
