@@ -32,6 +32,7 @@ import pyinform
 import multiprocessing
 import typing
 
+
 # FREQUENCY = 'D'
 #
 # dummy_data_dir = 'C:\\STUFF\\RESEARCH\\TENet\\DummyData\\'
@@ -76,11 +77,11 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
     actor_type = actors_df.loc[actor_id]['actor_type']
     if actor_type == 'plat':
         plat = plat_actors_df.loc[actor_id][0]
-        #print(f"{actor_id} is Platform: {plat}")
+        # print(f"{actor_id} is Platform: {plat}")
         return dataset_df[dataset_df['platform'] == plat]
     elif actor_type == 'indv':
         user_id = indv_actors_df.loc[actor_id][0]
-        #print(f"{actor_id} is Individual: {user_id}")
+        # print(f"{actor_id} is Individual: {user_id}")
         return dataset_df[dataset_df['user_id'] == user_id]
     elif actor_type == 'comm':
         user_list = comm_actors_df.loc[actor_id]['user_id']
@@ -99,7 +100,7 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
             print(msg)
             return dataset_df[dataset_df['user_id'].isin(user_list)]
         else:
-            return dataset_df[0:0] # return 0 records
+            return dataset_df[0:0]  # return 0 records
     else:
         raise Exception(f'Unknown actor type : {actor_id} -> {actor_type}\n{actors_df}')
 
@@ -119,32 +120,39 @@ def generate_timeseries_index(start_time, end_time, frequency):
     return pd.DatetimeIndex(pd.date_range(start=start_time, end=end_time, freq=frequency))
 
 
-def resample_binary_timeseries(timeseries, time_index, frequency):
+def resample_binary_timeseries(timeseries, time_index, frequency, classes):
     """
     Resamples the given timeseries (index must be a datetime) by the given frequency and fills values accordingly
      to match the given time_index series. The value column of the returned series will be binary
      (contain either 0 or 1). 0 says that nothing happened at that time interval, 1 says that something happened in
       that interval.
+    :param classes: unique values of the 'class' column. e.g. ['UF','UM','TF','TM']
+    :type classes: typing.List[str]
     :param timeseries: a pandas dataframe with index set to a datetime.
     :type timeseries: pd.DataFrame
     :param time_index: The timeseries index for given frequency. This will be the index of the returned series
     :type time_index: pd.DatetimeIndex
     :param frequency: a string value representing the frequency of resampling. e.g. 'D', '12H', '15min'
     :type frequency: str
-    :return: the resampled timeseries with time_index as its index
-    :rtype: np.ndarray
+    :return: a dictionary containing resampled timeseries with time_index as its index for each class. (i.e. Class is the key and resampled timeseries is the value for each key.)
+    :rtype: typing.Dict[str, np.ndarray]
     """
-    return timeseries.resample(frequency).apply(lambda x: 1 if len(x) > 0 else 0).iloc[:, 0].rename('events').reindex(
-        time_index, fill_value=0).values
+    retval = {}
+    for this_class in classes:
+        retval[this_class] = timeseries[timeseries['class'] == this_class].resample(frequency).apply(
+            lambda x: 1 if len(x) > 0 else 0).iloc[:, 0].rename('events').reindex(time_index, fill_value=0).values
+    return retval
 
 
-def multiprocess_resample_actor_binary_timeseries(ordered_actor_id_events_list, time_index, frequency):
+def multiprocess_resample_actor_binary_timeseries(ordered_actor_id_events_list, time_index, frequency, classes):
     """
     Calculates a binary timeseries for each event list in the given ordered_actor_id_events_list.
      Utilize the Multiprocessing Pools for fast execution over CPUs.
      Results contain an ordered list of binary timeservers of each respective actor event list in the input
      ordered_actor_id_events_list parameter
      (i.e. the order of ordered_actor_id_events_list corresponds to the order of results).
+    :param classes: unique values of the 'class' column. e.g. ['UF','UM','TF','TM']
+    :type classes: typing.List[str]
     :param frequency: a string value representing the frequency of resampling. e.g. 'D', '12H', '15min'
     :type frequency: str
     :param ordered_actor_id_events_list: a list that holds the events DataFrame of each actor_id. Order of results
@@ -152,49 +160,63 @@ def multiprocess_resample_actor_binary_timeseries(ordered_actor_id_events_list, 
     :type ordered_actor_id_events_list: typing.List[pd.DataFrame]
     :param time_index: a pandas series that will be used as the index for resampling the data
     :type time_index: pd.DatetimeIndex
-    :return: a list where each element is an array of binary values (0s and 1s) which represents
+    :return: a list of dictionaries where each element is an array of binary values (0s and 1s) which represents
      the binary timeseries value that corresponds to each index in the time_index.
     For more information check the resample_binary_timeseries function that is being called by this function.
-    :rtype: typing.List[np.ndarray]
+    :rtype: typing.List[typing.Dict[str, np.ndarray]]
     """
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
         results = p.starmap(resample_binary_timeseries,
-                            [(actor_id_events.set_index('datetime'), time_index, frequency) for actor_id_events in
+                            [(actor_id_events.set_index('datetime'), time_index, frequency, classes) for actor_id_events
+                             in
                              ordered_actor_id_events_list])
     return results
 
 
-def calculate_te_values(src_actor_id, tgt_actor_id, src_timeseries, tgt_timeseries):
+def calculate_te_values(src_actor_id, tgt_actor_id, src_timeseries_dict, tgt_timeseries_dict, classes):
     """
     Calculates the transfer entropy from the given source and target timeseries and returns a list that contains
      [Source, Target, TransferEntropy].
+    :param classes: unique values of the 'class' column. e.g. ['UF','UM','TF','TM']
+    :type classes: typing.List[str]
     :param src_actor_id: actor_id of Source
     :type src_actor_id: str
     :param tgt_actor_id: actor_id of Target
     :type tgt_actor_id: str
-    :param src_timeseries: binary timeseries of Source
-    :type src_timeseries: np.ndarray
-    :param tgt_timeseries: binary timeseries of Target
-    :type tgt_timeseries: np.ndarray
-    :return: the list [Source actor_id, Target actor_id, Transfer Entropy value]
-    :rtype: typing.List[str, str, float]
+    :param src_timeseries_dict: a dictionary containing, for each class: a binary timeseries of Source
+    :type src_timeseries_dict: typing.Dict[str, np.ndarray]
+    :param tgt_timeseries_dict: a dictionary containing, for each class: a binary timeseries of Target
+    :type tgt_timeseries_dict: typing.Dict[str, np.ndarray]
+    :return: the list [Source actor_id, Target actor_id, TransferEntropyValueClass1ToClass2, TransferEntropyValueClass1ToClass3, ..., TotalTransferEntropy]
+    Will have a typing of [ str, str, float, float, ..., float]
+    :rtype: typing.List
     """
     print(f"[{src_actor_id} ==> {tgt_actor_id}]")
     # print(f"{src_timeseries.shape} ==> {tgt_timeseries.shape}")
-    return [src_actor_id, tgt_actor_id, pyinform.transfer_entropy(src_timeseries, tgt_timeseries, 2)]
+    te_values_list = []
+    total_te = 0
+    for src_class in classes:
+        for tgt_class in classes:
+            this_te = pyinform.transfer_entropy(src_timeseries_dict[src_class], tgt_timeseries_dict[tgt_class], 2)
+            te_values_list.append(this_te)
+            total_te += this_te
+    te_values_list.append(total_te)
+    return [src_actor_id, tgt_actor_id] + te_values_list
 
 
-def multiprocess_run_calculate_te_edge_list(ordered_actor_id_list, ordered_actor_timeseries_list):
+def multiprocess_run_calculate_te_edge_list(ordered_actor_id_list, ordered_actor_timeseries_dict_list, classes):
     """
     Utilize multiprocessing Pool for calculating all transfer entropy values using the calculate_te_values function.
     Returns a list of calculate_te_values function returns for the provided input parameters.
+    :param classes: unique values of the 'class' column. e.g. ['UF','UM','TF','TM']
+    :type classes: typing.List[str]
     :param ordered_actor_id_list: the ordered list of actor_id values.
     :type ordered_actor_id_list: typing.List[str]
-    :param ordered_actor_timeseries_list: a list where each element is an array of binary values (0s and 1s)
-     which represent the binary timeseries.
-    :type ordered_actor_timeseries_list: typing.List[np.ndarray]
-    :return: list of actor_id interactions with their corresponding transfer entropy values
-    :rtype: typing.List[typing.List[str, str, float]]
+    :param ordered_actor_timeseries_dict_list: a dictionary of lists where each element is an array of binary values (0s and 1s)
+     which represent the binary timeseries. keys are the classes.
+    :type ordered_actor_timeseries_dict_list: typing.Dict[str, np.ndarray]
+    :return: list of actor_id interactions with their corresponding transfer entropy values. (A list of outputs from the calculate_te_values function)
+    :rtype: typing.List[typing.List]
     """
     param_list = []
     for src_idx in range(len(ordered_actor_id_list)):
@@ -202,22 +224,24 @@ def multiprocess_run_calculate_te_edge_list(ordered_actor_id_list, ordered_actor
             if src_idx == tgt_idx:
                 continue
             param_list.append((ordered_actor_id_list[src_idx], ordered_actor_id_list[tgt_idx],
-                               ordered_actor_timeseries_list[src_idx], ordered_actor_timeseries_list[tgt_idx]))
+                               ordered_actor_timeseries_dict_list[src_idx], ordered_actor_timeseries_dict_list[tgt_idx], classes))
     print(f"params ready. Count: {len(param_list)}")
-    #with multiprocessing.Pool(multiprocessing.cpu_count() - 1) as p:
+    # with multiprocessing.Pool(multiprocessing.cpu_count() - 1) as p:
     #    results = p.starmap(calculate_te_values, param_list)
     results = []
     for param in param_list:
-        r = calculate_te_values(param[0],param[1],param[2],param[3])
+        r = calculate_te_values(param[0], param[1], param[2], param[3], param[4])
         results.append(r)
     print("mult proc done")
     return results
 
 
 def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df,
-                          frequency):
+                          frequency, classes=['UF', 'UM', 'TF', 'TM']):
     """
     Calculates the transfer entropy based edge weights for the given set of actors.
+    :param classes:
+    :type classes:
     :param comm_actors_df:
     :type comm_actors_df:
     :param indv_actors_df:
@@ -242,18 +266,22 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
     datetime_index = generate_timeseries_index(start_date, end_date, frequency)
     print("Running resampling timeseries calc...")
     # resample actor timeseries
-    actor_timeseries_list = multiprocess_resample_actor_binary_timeseries(
+    actor_timeseries_dict_list = multiprocess_resample_actor_binary_timeseries(
         [get_events_of_actor(actor_id, all_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df) for
          actor_id in actor_id_list],
-        datetime_index, frequency)
+        datetime_index, frequency, classes)
     print("Running TE edge list calc...")
-    print(actor_timeseries_list)
+    print(actor_timeseries_dict_list)
     # calculate te values
-    src_tgt_te_list = multiprocess_run_calculate_te_edge_list(actor_id_list, actor_timeseries_list)
+    src_tgt_te_list = multiprocess_run_calculate_te_edge_list(actor_id_list, actor_timeseries_dict_list, classes)
     print("Calculation done. Creating dataframe...")
-    result_df = pd.DataFrame(src_tgt_te_list, columns=['Source', 'Target', 'TE'])
+    te_col_names = []
+    for src_class in classes:
+        for tgt_class in classes:
+            te_col_names.append(f"{src_class}_{tgt_class}")
+    te_col_names.append("total_te")
+    result_df = pd.DataFrame(src_tgt_te_list, columns=['Source', 'Target'] + te_col_names)
     return result_df
-
 
 # def main():
 #     # newsdomains = pd.read_csv(dummy_data_dir + file_table_1, index_col='domain_name')
