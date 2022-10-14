@@ -1,3 +1,30 @@
+"""
+MIT License
+
+Copyright (c) 2022 Chathura Jeewaka Jayalath Don Dimungu Arachchige (deamonpog)
+                    Complex Adaptive Systems Laboratory
+                    University of Central Florida
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+"""
+
 import pandas as pd
 import numpy as np
 import datetime
@@ -48,14 +75,15 @@ def generate_dummy_table_3(num_msgs_per_platform):
     data_list = []
     msgtime = datetime.datetime(2018, 3, 1)
     msgid = -1
-    for i in range(num_msgs_per_platform):
+    for iter in range(num_msgs_per_platform):
         for plat in users_list['platform'].unique():
             msgtime = msgtime + datetime.timedelta(minutes=np.random.randint(0, 60))
             msgid += 1
+            src_related_idx = iter + 100
             userid = np.random.choice(users_list[users_list['platform'] == plat]['user_id'])
             platform = users_list.iloc[userid]['platform']
-            srcmsgid = f"m{i}_{plat}"
-            parentid = f"m{np.random.randint(0, i + 1)}_{plat}"
+            srcmsgid = f"m{src_related_idx}_{plat}"
+            parentid = f"m{np.random.randint(0, src_related_idx + 1)}_{plat}"
             domain = np.random.choice(domains_list)
             articleurl = f"{domain}/{chr(np.random.randint(ord('a'), ord('a') + 5))}/{np.random.randint(5)}"
             data_list.append(
@@ -63,7 +91,7 @@ def generate_dummy_table_3(num_msgs_per_platform):
                  domain])
     pd.DataFrame(data_list
                  ,
-                 columns=['msg_id', 'user_id', 'platform', 'source_msg_id', 'parent_msg_id', 'time', 'article_url',
+                 columns=['msg_id', 'user_id', 'platform', 'plat_msg_id', 'parent_plat_msg_id', 'time', 'article_url',
                           'domain_name']).to_csv(dummy_data_dir + file_table_3, index=False)
 
 

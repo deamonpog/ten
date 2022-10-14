@@ -1,9 +1,36 @@
 """
-Main execution file for calculating Transfer Entropy Network
+Generating Transfer Entropy Network and Retweet Network from the twitter data.
 
 Author:
 Chathura Jayalath
 Complex Adaptive Systems Laboratory, UCF
+"""
+
+"""
+MIT License
+
+Copyright (c) 2022 Chathura Jeewaka Jayalath Don Dimungu Arachchige (deamonpog)
+                    Complex Adaptive Systems Laboratory
+                    University of Central Florida
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 """
 
 import glob
@@ -14,15 +41,16 @@ import time
 import multiprocessing
 import pprint
 import numpy as np
-
+import datetime
 from typing import List
 
 DATA_FILE_DIRECTORY = 'C:\\STUFF\\RESEARCH\\TENet\\DATA'
-MINIMUM_POSTS = {'#wildfire': 10, '#infinitychallenge': 0}
-FREQUENCY = 'D'
+MINIMUM_POSTS = {'#wildfire': 0, '#infinitychallenge': 0}
+FREQUENCY = '4H'
 SORTED_HASHTAGS_LIST = ['#wildfire', '#infinitychallenge']
 OUTPUT_DIRECTORY = 'C:\\STUFF\\RESEARCH\\TENet\\OUTPUTS'
 UNIQUE_NOT_FOUND_STRING = '__NOT_FOUND__'
+THRESHOLD_TE = 0.00
 
 
 def read_csv_data(data_directory):
@@ -76,8 +104,10 @@ def generate_sampled_binary_timeseries(timeseries, time_index, frequency='D'):
     :return: the resampled timeseries with time_index as its index
     :rtype: pd.Series
     """
-    return timeseries.resample(frequency).apply(lambda x: 1 if len(x) > 0 else 0).iloc[:, 0].rename('events').reindex(
+    result = timeseries.resample(frequency).apply(lambda x: 1 if len(x) > 0 else 0).iloc[:, 0].rename('events').reindex(
         time_index, fill_value=0)
+    # print('\n\t-----timeseris: ', timeseries, '\n\t----result', result)
+    return result
 
 
 def calculate_transfer_entropy(source: list, target: list, k: int) -> float:
@@ -95,7 +125,7 @@ def calculate_transfer_entropy(source: list, target: list, k: int) -> float:
     return pyinform.transfer_entropy(source, target, k=k)
 
 
-def calculate_author_values(author_id, num_mentions, all_data, time_index):
+def calculate_author_values(author_id, num_mentions, all_data, time_index, frequency):
     """
     Returns the Node information and generated timeseries of the Author
     Reads the data from ALL_DATA global variable which must have been populated before invoking this function.
@@ -111,13 +141,13 @@ def calculate_author_values(author_id, num_mentions, all_data, time_index):
      item is the timeseries values as a binary list.
     :rtype: tuple
     """
-    global FREQUENCY
     author_id_events = all_data[all_data['AuthorID'] == author_id]
     return ([author_id, author_id_events['Author'].iloc[0], num_mentions],
-            generate_sampled_binary_timeseries(author_id_events.set_index('Date'), time_index, FREQUENCY).values)
+            generate_sampled_binary_timeseries(author_id_events.set_index('Date'), time_index, frequency).values)
 
 
-def multiprocess_run_calculate_author_values(author_list, author_id_to_num_mentions_dict, all_data, time_index):
+def multiprocess_run_calculate_author_values(author_list, author_id_to_num_mentions_dict, all_data, time_index,
+                                             frequency):
     """
     Calculates the author node and timeseries data for each author in the given author_list using Multiprocessing Pools.
     Results contain an ordered list of results which represent the data for each respective author in the order of
@@ -138,7 +168,8 @@ def multiprocess_run_calculate_author_values(author_list, author_id_to_num_menti
     """
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
         results = p.starmap(calculate_author_values,
-                            [(author, author_id_to_num_mentions_dict[author], all_data, time_index) for author in
+                            [(author, author_id_to_num_mentions_dict[author], all_data, time_index, frequency) for
+                             author in
                              author_list])
     return results
 
@@ -173,14 +204,10 @@ def calculate_retweet_network(data_df, selected_author_ids):
     :rtype: pd.Dataframe
     """
     author_id_set = set(selected_author_ids)
-    src_tgt_count = data_df[data_df['ThreadAuthorID'] != UNIQUE_NOT_FOUND_STRING].groupby(
+    src_tgt_count = data_df.groupby(
         ['ThreadAuthorID', 'AuthorID'], as_index=False).size()
     src_tgt_count.rename(columns={'ThreadAuthorID': 'Source', 'AuthorID': 'Target', 'size': 'Count'}, inplace=True)
-    src_tgt_count = src_tgt_count[(src_tgt_count['Source'] != UNIQUE_NOT_FOUND_STRING) & (
-            src_tgt_count['Target'] != UNIQUE_NOT_FOUND_STRING) & (
-                                      src_tgt_count['Source'].isin(author_id_set)) & (
-                                      src_tgt_count['Target'].isin(author_id_set))][
-        ['Source', 'Target', 'Count']]
+    src_tgt_count = src_tgt_count[src_tgt_count['Target'].isin(author_id_set)][['Source', 'Target', 'Count']]
     return src_tgt_count
 
 
@@ -194,7 +221,7 @@ def find_hashtag(hashtag_list_str: str, sorted_target_hashtags: List[str]) -> ob
     return None
 
 
-def analyze_data(data_df, minimum_posts, time_index_series, title):
+def analyze_data(data_df, minimum_posts, time_index_series, frequency, title):
     task_start_time = time.time()
 
     # find high activity authors
@@ -203,7 +230,7 @@ def analyze_data(data_df, minimum_posts, time_index_series, title):
                                 author_id_to_num_mentions_dict[a] > minimum_posts]
     indexed_high_activity_author_ids = [(i, j) for i, j in enumerate(high_activity_author_ids)]
     print(f"High Activity Users : (Count: {len(high_activity_author_ids)})")
-    pprint.pprint(np.array(high_activity_author_ids))
+    pprint.pprint(np.array(high_activity_author_ids[:30]))
 
     print(f"{time.time() - task_start_time} seconds spent on reading data and calculating activity.")
     task_start_time = time.time()
@@ -232,7 +259,8 @@ def analyze_data(data_df, minimum_posts, time_index_series, title):
     # calculate author data
     results = multiprocess_run_calculate_author_values(high_activity_author_ids, author_id_to_num_mentions_dict,
                                                        data_df,
-                                                       time_index_series)
+                                                       time_index_series, frequency)
+    # pprint.pprint(results)
     time_series_list = [r[1] for r in results]
     node_list = [r[0] for r in results]
     del results
@@ -245,7 +273,9 @@ def analyze_data(data_df, minimum_posts, time_index_series, title):
 
     # generate node list file for Gephi
     node_list_df = pd.DataFrame(node_list, columns=['Id', 'Label', 'Count'])
-    node_list_df.to_csv(os.path.join(OUTPUT_DIRECTORY, f'{title}_nodes.csv'), index=False)
+    node_list_file_name = os.path.join(OUTPUT_DIRECTORY, f'{title}_nodes.csv')
+    node_list_df.to_csv(node_list_file_name, index=False)
+    print(f'Node list written to : {node_list_file_name}')
     print(f"Node file : (Nodes/Lines : {node_list_df.shape[0]})")
     print(node_list_df)
     del node_list_df
@@ -262,7 +292,8 @@ def analyze_data(data_df, minimum_posts, time_index_series, title):
 
     # generate edge list file for Gephi
     edge_list_df = pd.DataFrame(src_tgt_te, columns=['Source', 'Target', 'TE'])
-    edge_list_df['Weight'] = edge_list_df['TE'].apply(lambda x: 1 if x > 0.05 else 0)
+    print("Unique Values of TE : ", edge_list_df.TE.unique())
+    edge_list_df['Weight'] = edge_list_df['TE'].apply(lambda x: 1 if x > THRESHOLD_TE else 0)
     max_te = edge_list_df['TE'].max()
     edge_list_df['Normalized'] = edge_list_df['TE'].apply(lambda x: x / max_te)
     print(edge_list_df)
@@ -273,9 +304,16 @@ def analyze_data(data_df, minimum_posts, time_index_series, title):
     print(f"{time.time() - task_start_time} seconds spent on writing edge list to file.")
 
 
-def main():
+def main(start_date, end_date):
+    """
+    :param start_date: inclusive
+    :type start_date: datetime.datetime
+    :param end_date: inclusive
+    :type end_date: datetime.datetime
+    """
     # Read all files and populate the global variables
     all_data_df = read_csv_data(DATA_FILE_DIRECTORY)
+    all_data_df = all_data_df[(start_date <= all_data_df['Date']) & (all_data_df['Date'] <= end_date)]
 
     # verify that UNIQUE_NOT_FOUND_STRING is not in the dataset
     found = all_data_df[all_data_df['Author'] == UNIQUE_NOT_FOUND_STRING].shape[0] > 0
@@ -294,20 +332,33 @@ def main():
 
     print(all_data_df.head())
 
-    start_date = all_data_df['Date'].dt.date.min()
-    end_date = all_data_df['Date'].dt.date.max()
-    print(f"Data available from {start_date} to {end_date}")
-
+    # get start date and end date and create time index for the timeseries
+    # start_date = all_data_df['Date'].dt.date.min()
+    # end_date = all_data_df['Date'].dt.date.max() + datetime.timedelta(days=1)
+    print(f"Data available from {all_data_df['Date'].min()} to {all_data_df['Date'].max()}")
     time_index_series = generate_timeseries_index(start_date, end_date, FREQUENCY)
+    print("Time index: ")
+    pprint.pprint(time_index_series)
+
+    # filter data to include only the valid author_id values
+    all_data_df = all_data_df[(all_data_df['AuthorID'] != UNIQUE_NOT_FOUND_STRING)]
 
     for hashtag in SORTED_HASHTAGS_LIST:
-        print(f"Processing the hashtag: {hashtag}")
+        print(f"\n\t******* Processing the hashtag: {hashtag}")
         filtered_data_df = all_data_df[all_data_df['Hashtag'] == hashtag]
-        analyze_data(filtered_data_df, MINIMUM_POSTS[hashtag], time_index_series, hashtag[1:])
-        print(f"Finished the hashtag: {hashtag}")
+        analyze_data(filtered_data_df, MINIMUM_POSTS[hashtag], time_index_series, FREQUENCY, hashtag[1:])
+        print(f"\t------- Finished the hashtag: {hashtag}")
 
 
 if __name__ == '__main__':
+    print("-- Parameters --")
+    print("Sorted Hashtags List:")
+    pprint.pprint(SORTED_HASHTAGS_LIST)
+    print("Minimum Posts:")
+    pprint.pprint(MINIMUM_POSTS)
+    print(f"Frequency: {FREQUENCY}")
+    print(f"Threshold TE: {THRESHOLD_TE}")
+    print(f"Unique Not Found Str: \"{UNIQUE_NOT_FOUND_STRING}\"")
     print("--Begin--")
-    main()
+    main(datetime.datetime(2021, 12, 1, 0, 0, 0), datetime.datetime(2021, 12, 31, 23, 59, 59))
     print("--End--")
