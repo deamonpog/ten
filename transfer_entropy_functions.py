@@ -97,7 +97,7 @@ def get_events_of_actor(actor_id, dataset_df, actors_df, indv_actors_df, comm_ac
             else:
                 users = ' '.join([f"{u}" for u in np.random.choice(user_list, print_limit, replace=False)])
                 msg = f"{msg} : [{users} ...]"
-            print(msg)
+            #print(msg)
             return dataset_df[dataset_df['user_id'].isin(user_list)]
         else:
             return dataset_df[0:0]  # return 0 records
@@ -191,13 +191,13 @@ def calculate_te_values(src_actor_id, tgt_actor_id, src_timeseries_dict, tgt_tim
     Will have a typing of [ str, str, float, float, ..., float]
     :rtype: typing.List
     """
-    print(f"[{src_actor_id} ==> {tgt_actor_id}]")
+    #print(f"[{src_actor_id} ==> {tgt_actor_id}]")
     # print(f"{src_timeseries.shape} ==> {tgt_timeseries.shape}")
     te_values_list = []
     total_te = 0
     for src_class in classes:
         for tgt_class in classes:
-            this_te = pyinform.transfer_entropy(src_timeseries_dict[src_class], tgt_timeseries_dict[tgt_class], 2)
+            this_te = pyinform.transfer_entropy(src_timeseries_dict[src_class], tgt_timeseries_dict[tgt_class], 1)
             te_values_list.append(this_te)
             total_te += this_te
     te_values_list.append(total_te)
@@ -237,7 +237,7 @@ def multiprocess_run_calculate_te_edge_list(ordered_actor_id_list, ordered_actor
 
 
 def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df,
-                          frequency, classes=['UF', 'UM', 'TF', 'TM']):
+                          frequency, start_date, end_date, classes=['UF', 'UM', 'TF', 'TM']):
     """
     Calculates the transfer entropy based edge weights for the given set of actors.
     :param classes:
@@ -260,18 +260,19 @@ def generate_te_edge_list(actor_id_list, all_events_df, actors_df, indv_actors_d
     :rtype:
     """
     # generate time_index
-    start_date = all_events_df['datetime'].dt.date.min()
-    end_date = all_events_df['datetime'].dt.date.max() + datetime.timedelta(days=1)
-    print(f"Data available from {start_date} to {end_date}")
+    #start_date = all_events_df['datetime'].dt.date.min()
+    #end_date = all_events_df['datetime'].dt.date.max() + datetime.timedelta(days=1)
+    print(f"Filtering data available from {start_date} to {end_date}")
+    filtered_events_df = all_events_df[ (start_date <= all_events_df['datetime']) & (all_events_df['datetime'] <= end_date) ]
     datetime_index = generate_timeseries_index(start_date, end_date, frequency)
     print("Running resampling timeseries calc...")
     # resample actor timeseries
     actor_timeseries_dict_list = multiprocess_resample_actor_binary_timeseries(
-        [get_events_of_actor(actor_id, all_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df) for
+        [get_events_of_actor(actor_id, filtered_events_df, actors_df, indv_actors_df, comm_actors_df, plat_actors_df) for
          actor_id in actor_id_list],
         datetime_index, frequency, classes)
     print("Running TE edge list calc...")
-    print(actor_timeseries_dict_list)
+    #print(actor_timeseries_dict_list)
     # calculate te values
     src_tgt_te_list = multiprocess_run_calculate_te_edge_list(actor_id_list, actor_timeseries_dict_list, classes)
     print("Calculation done. Creating dataframe...")
